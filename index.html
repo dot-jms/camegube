@@ -983,66 +983,6 @@
 
             requestAnimationFrame(simLoop);
         }
-                            }, 50);
-                        }
-                    }
-                };
-            }
-            
-            emuWorker.onmessage = (e) => {
-                const { type, msg, level, data } = e.data;
-                
-                if (type === 'LOG') {
-                    sysLog(msg, level);
-                }
-                else if (type === 'CRITICAL_ERROR') {
-                    sysLog("GAME FAILED TO BOOT", "error");
-                    document.getElementById('status-text').textContent = "ERROR: BACKEND MISSING";
-                    document.getElementById('status-text').classList.add('text-red-400');
-                    
-                    // Render error to canvas directly
-                    const canvas2d = document.createElement('canvas');
-                    canvas2d.width = 640; canvas2d.height = 480;
-                    const ctx2d = canvas2d.getContext('2d');
-                    ctx2d.fillStyle = '#111'; ctx2d.fillRect(0,0,640,480);
-                    ctx2d.fillStyle = '#ff4444'; ctx2d.font = 'bold 22px Inter, sans-serif';
-                    ctx2d.fillText('EMULATOR INITIALIZATION FAILED', 40, 80);
-                    ctx2d.fillStyle = '#ddd'; ctx2d.font = '13px Inter, monospace';
-                    
-                    const lines = msg.split('\n');
-                    let y = 130;
-                    for(let i=0; i<lines.length; i++) {
-                        if (lines[i].startsWith('Reason:')) ctx2d.fillStyle = '#ffcc00';
-                        else ctx2d.fillStyle = '#cccccc';
-                        ctx2d.fillText(lines[i], 40, y);
-                        y += 22;
-                    }
-                    
-                    if(ctx) {
-                        canvas.parentNode.replaceChild(canvas2d, canvas);
-                        canvas2d.id = 'game-canvas';
-                        canvas2d.classList.add('w-full', 'h-full', 'object-contain', 'shadow-2xl', 'rounded');
-                    }
-                }
-                else if (type === 'FRAME_READY') {
-                    updateDebugStats(data);
-                }
-            };
-
-            // Start architecture with custom URL if saved
-            const customCoreUrl = localStorage.getItem('gc_custom_core_url');
-            emuWorker.postMessage({ 
-                type: 'INIT', 
-                payload: { 
-                    protocol: window.location.protocol,
-                    customUrl: customCoreUrl
-                } 
-            });
-            emuWorker.postMessage({ type: 'MOUNT_DISC', payload: { name: file.name, size: file.size } });
-            
-            initAudioPipeline();
-            startGameLoop();
-        }
 
         // --- Real Web Audio Pipeline Setup ---
         let audioCtx;
