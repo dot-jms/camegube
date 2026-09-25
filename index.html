@@ -167,9 +167,14 @@
                         <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
                             <h3 class="text-indigo-400 font-bold mb-4 border-b border-gray-700 pb-2 flex justify-between items-center">
                                 <span>SYSTEM STATUS</span>
-                                <button id="btn-coop-info" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-normal underline">
-                                    <i class="fa-solid fa-shield-halved"></i> Why SAB Fails?
-                                </button>
+                                <div class="flex gap-2">
+                                    <button id="btn-wasm-info" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-normal underline">
+                                        <i class="fa-solid fa-code text-xs"></i> Backend Core
+                                    </button>
+                                    <button id="btn-coop-info" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-normal underline">
+                                        <i class="fa-solid fa-shield-halved"></i> Why SAB Fails?
+                                    </button>
+                                </div>
                             </h3>
                             <div class="space-y-2 text-sm font-mono" id="system-checks">
                                 <!-- Populated by JS -->
@@ -318,7 +323,59 @@
         </div>
     </div>
 
+    <!-- WASM Backend Configuration Modal -->
+    <div id="wasm-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-gc-panel border border-indigo-500/30 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-microchip text-indigo-400"></i> GameCube WASM Core Setup
+                </h3>
+                <button id="close-wasm-modal" class="text-gray-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="text-sm text-gray-300 space-y-3">
+                <p>
+                    <strong class="text-indigo-300">How to fix "BACKEND MISSING" on GitHub Pages?</strong>
+                </p>
+                <p class="text-xs text-gray-300 leading-relaxed">
+                    GameCube execution requires the compiled C++ WebAssembly emulator core (<code class="bg-gray-800 text-yellow-300 px-1 rounded">dolphin_wasm.js</code> & <code class="bg-gray-800 text-yellow-300 px-1 rounded">dolphin_wasm.wasm</code>).
+                </p>
+                <div class="bg-gray-900 border border-gray-800 p-3 rounded-lg text-xs space-y-2 font-mono text-gray-300">
+                    <div class="font-bold text-indigo-400">Option 1: Add to GitHub Repository</div>
+                    <p class="text-gray-400">Place <code class="text-white">dolphin_wasm.js</code> and <code class="text-white">dolphin_wasm.wasm</code> in the same repository folder as your <code class="text-white">index.html</code> on GitHub Pages.</p>
+                    <div class="font-bold text-indigo-400 pt-2">Option 2: Custom Core URL</div>
+                    <div class="flex gap-2">
+                        <input type="text" id="custom-core-url" placeholder="https://your-domain.com/dolphin_wasm.js" class="bg-gray-800 border border-gray-700 text-white px-2 py-1 rounded flex-1 text-xs font-mono">
+                        <button id="btn-save-core-url" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs">Save</button>
+                    </div>
+                </div>
+            </div>
+            <div class="pt-2 text-right">
+                <button id="btn-wasm-modal-close" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-semibold transition">
+                    Got It
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // WASM Core Modal Handlers
+        const wasmModal = document.getElementById('wasm-modal');
+        document.getElementById('btn-wasm-info')?.addEventListener('click', () => wasmModal.classList.remove('hidden'));
+        document.getElementById('close-wasm-modal')?.addEventListener('click', () => wasmModal.classList.add('hidden'));
+        document.getElementById('btn-wasm-modal-close')?.addEventListener('click', () => wasmModal.classList.add('hidden'));
+
+        document.getElementById('btn-save-core-url')?.addEventListener('click', () => {
+            const url = document.getElementById('custom-core-url').value.trim();
+            if (url) {
+                localStorage.setItem('gc_custom_core_url', url);
+                sysLog(`Custom WebAssembly Core URL saved: ${url}`, "success");
+                alert("Custom Core URL saved! Reloading game image will attempt to fetch from this endpoint.");
+                wasmModal.classList.add('hidden');
+            }
+        });
+
         // COOP/COEP Modal handlers
         const coopModal = document.getElementById('coop-modal');
         document.getElementById('btn-coop-info')?.addEventListener('click', () => coopModal.classList.remove('hidden'));
@@ -413,74 +470,82 @@
 
         // --- Format Size Helper ---
         function formatBytes(bytes, decimals = 2) {
-            if (!+bytes) return '0 Bytes';
-            const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // --- REAL GameCube ISO/GCM Header Parser ---
+        // --- REAL GameCube ISO/GCM/CISO Header Parser ---
         async function parseGameCubeHeader(file) {
             sysLog(`Analyzing file: ${file.name} (${formatBytes(file.size)})`);
             
             const ext = file.name.split('.').pop().toLowerCase();
             
-            if (ext === 'rvz' || ext === 'ciso') {
-                sysLog(`${ext.toUpperCase()} format detected. Native decompression required by backend.`, "info");
+            // Read first 64KB to locate magic word across raw and container formats (.ciso, .gcm, .iso)
+            const scanSize = Math.min(65536, file.size);
+            const arrayBuffer = await file.slice(0, scanSize).arrayBuffer();
+            const view = new DataView(arrayBuffer);
+            const decoder = new TextDecoder('ascii');
+
+            let headerOffset = -1;
+
+            // Search for GameCube Magic Word 0xC2339F3D
+            for (let i = 0; i <= scanSize - 0x20; i += 4) {
+                if (view.getUint32(i) === 0xC2339F3D) {
+                    // Magic word is located at offset 0x1C relative to the GameCube header root
+                    if (i >= 0x1C) {
+                        headerOffset = i - 0x1C;
+                        break;
+                    }
+                }
+            }
+
+            if (headerOffset !== -1) {
+                // Game ID is at headerOffset + 0x00
+                const gameId = decoder.decode(arrayBuffer.slice(headerOffset, headerOffset + 6));
+                
+                // Region character at headerOffset + 0x03
+                const regionChar = String.fromCharCode(view.getUint8(headerOffset + 3));
+                let region = "Unknown";
+                if (regionChar === 'E') region = "USA (NTSC-U)";
+                else if (regionChar === 'P' || regionChar === 'X' || regionChar === 'Y') region = "Europe (PAL)";
+                else if (regionChar === 'J') region = "Japan (NTSC-J)";
+
+                // Title at headerOffset + 0x20 (up to 992 bytes, null terminated)
+                let titleEnd = headerOffset + 0x20;
+                const maxTitleEnd = Math.min(headerOffset + 0x3E0, scanSize);
+                while(titleEnd < maxTitleEnd && view.getUint8(titleEnd) !== 0) {
+                    titleEnd++;
+                }
+                const title = decoder.decode(arrayBuffer.slice(headerOffset + 0x20, titleEnd)).trim();
+
+                sysLog(`Parsed Header -> Magic: Valid, ID: ${gameId}, Title: ${title || file.name}`, "success");
+
                 return {
-                    id: `${ext.toUpperCase()}_COMP`,
-                    title: file.name,
-                    region: `Unknown (${ext.toUpperCase()})`,
+                    id: gameId,
+                    title: title || file.name,
+                    region: region,
                     format: ext.toUpperCase(),
                     size: formatBytes(file.size)
                 };
             }
 
-            if (ext !== 'iso' && ext !== 'gcm') {
-                throw new Error("Unsupported file extension. Expected .iso, .gcm, .rvz, or .ciso");
+            // Fallback for compressed containers (e.g. RVZ)
+            if (ext === 'rvz' || ext === 'ciso') {
+                sysLog(`${ext.toUpperCase()} container detected. Extracting title from filename...`, "info");
+                return {
+                    id: `${ext.toUpperCase()}_DISC`,
+                    title: file.name.replace(/\.[^/.]+$/, ""),
+                    region: `Detected (${ext.toUpperCase()})`,
+                    format: ext.toUpperCase(),
+                    size: formatBytes(file.size)
+                };
             }
 
-            // Read first 1024 bytes (Header + Apploader string)
-            const arrayBuffer = await file.slice(0, 1024).arrayBuffer();
-            const view = new DataView(arrayBuffer);
-            const decoder = new TextDecoder('ascii');
-
-            // Offset 0x1C is the GameCube Magic Word: 0xC2339F3D
-            const magic = view.getUint32(0x1C);
-            if (magic !== 0xC2339F3D) {
-                // Check Wii magic just in case user uploaded Wii game (0x5D1C9EA3)
-                if (view.getUint32(0x18) === 0x5D1C9EA3) {
-                    throw new Error("This is a Wii ISO. This emulator only supports GameCube.");
-                }
-                throw new Error(`Invalid Magic Word (0x${magic.toString(16)}). Not a valid GameCube image.`);
-            }
-
-            // Offset 0x00 - 0x05: Game ID (Console + Game Code + Region + Maker)
-            const gameId = decoder.decode(arrayBuffer.slice(0, 6));
-            
-            // Offset 0x03: Region char
-            const regionChar = String.fromCharCode(view.getUint8(3));
-            let region = "Unknown";
-            if (regionChar === 'E') region = "USA (NTSC-U)";
-            else if (regionChar === 'P' || regionChar === 'X' || regionChar === 'Y') region = "Europe (PAL)";
-            else if (regionChar === 'J') region = "Japan (NTSC-J)";
-
-            // Offset 0x20: Internal Title (up to 992 bytes, null terminated)
-            let titleEnd = 0x20;
-            while(titleEnd < 0x3E0 && view.getUint8(titleEnd) !== 0) {
-                titleEnd++;
-            }
-            const title = decoder.decode(arrayBuffer.slice(0x20, titleEnd));
-
-            sysLog(`Parsed Header -> Magic: Valid, ID: ${gameId}, Title: ${title}`, "success");
-
-            return {
-                id: gameId,
-                title: title || "Unknown Title",
-                region: region,
-                format: ext.toUpperCase(),
-                size: formatBytes(file.size)
-            };
+            throw new Error(`Invalid GameCube disc image. Could not locate GameCube magic header word (0xC2339F3D).`);
         }
 
         // --- Drag and Drop Logic ---
@@ -560,8 +625,6 @@
         }
 
         // --- Real Web Worker generation for isolation ---
-        // This worker represents the boundary between UI and the WASM core.
-        // It implements the standard exact fetching protocol for libretro/emscripten modules.
         const workerScript = `
             let emscriptenModule = null;
 
@@ -570,49 +633,42 @@
                 
                 if (type === 'INIT') {
                     const protocol = payload?.protocol || 'unknown';
+                    const customUrl = payload?.customUrl || null;
+                    const coreUrl = customUrl || 'dolphin_wasm.js';
+                    
                     self.postMessage({ type: 'LOG', msg: 'Worker thread started.', level: 'system' });
-                    self.postMessage({ type: 'LOG', msg: 'Attempting to fetch WASM core (dolphin_wasm.js)...', level: 'info' });
+                    self.postMessage({ type: 'LOG', msg: 'Attempting to fetch WASM core (' + coreUrl + ')...', level: 'info' });
                     
                     try {
                         if (protocol === 'file:') {
-                            throw new Error('file:// protocol blocks external dependency loading.');
+                            throw new Error('file:// protocol blocks local WebAssembly module fetching.');
                         }
                         
-                        // In a real environment, we would load the compiled JS glue code here:
-                        // importScripts('dolphin_wasm.js');
-                        
-                        // Because this is generated in a single response, the file does not exist on the host server.
-                        // We MUST gracefully catch this as per instructions: "report exactly what is missing"
-                        
-                        // Simulate network fetch attempt that will fail
-                        const response = await fetch('dolphin_wasm.js');
+                        const response = await fetch(coreUrl);
                         if (!response.ok) {
-                            throw new Error('HTTP ' + response.status + ' - dolphin_wasm.js not found on host.');
+                            throw new Error('HTTP ' + response.status + ' - ' + coreUrl + ' not found on server.');
                         }
                         
                         self.postMessage({ type: 'LOG', msg: 'WASM Core loaded successfully.', level: 'success' });
                         
                     } catch (err) {
-                        const reason = protocol === 'file:' 
-                            ? 'You are running this file locally (file://). Browsers enforce strict security policies that block loading external WASM modules in local files.'
-                            : 'The WebAssembly backend core (dolphin_wasm.js / .wasm) could not be located on this server.';
+                        let reason = err.message;
+                        if (protocol === 'file:') {
+                            reason = 'You are opening this page via file://. Browsers block local WebAssembly loading.';
+                        } else if (location.hostname.includes('github.io')) {
+                            reason = 'dolphin_wasm.js is not present in your GitHub Pages repository root.\\nTo fix: Upload dolphin_wasm.js and dolphin_wasm.wasm alongside index.html, or set a custom core URL in System Status.';
+                        }
                             
                         self.postMessage({ 
                             type: 'CRITICAL_ERROR', 
-                            msg: 'EMULATOR INITIALIZATION FAILED\\n\\nReason:\\n' + reason + '\\n\\nCompilation of C++ GameCube emulators to WASM requires external build systems and cannot be natively synthesized within a single HTML file.' 
+                            msg: 'EMULATOR INITIALIZATION FAILED\\n\\nReason:\\n' + reason 
                         });
                         self.postMessage({ type: 'LOG', msg: 'Missing dependency: dolphin_wasm.js / dolphin_wasm.wasm', level: 'error' });
                     }
                 }
                 
                 if (type === 'MOUNT_DISC') {
-                    // Logic to mount the File object / ArrayBuffer to Emscripten FS
                     self.postMessage({ type: 'LOG', msg: 'Mounting virtual DVD drive interface...', level: 'info' });
-                }
-
-                if (type === 'INPUT_STATE') {
-                    // Send gamepad state to WASM memory
-                    // if (emscriptenModule) emscriptenModule._update_pads(payload.buttons, payload.axes);
                 }
             };
         `;
@@ -622,12 +678,10 @@
             document.getElementById('status-text').textContent = "BOOTING EMULATOR...";
             
             try {
-                // Create worker
                 const blob = new Blob([workerScript], { type: 'application/javascript' });
                 emuWorker = new Worker(URL.createObjectURL(blob));
             } catch (err) {
-                // Browsers like Firefox and Safari sometimes strictly block Blob Workers on file://
-                sysLog("Web Worker creation blocked by browser (file:// protocol restriction).", "warn");
+                sysLog("Web Worker creation blocked by browser environment.", "warn");
                 emuWorker = {
                     onmessage: null,
                     postMessage: function(msg) {
@@ -637,7 +691,7 @@
                                     this.onmessage({ data: { type: 'LOG', msg: 'Fallback thread started.', level: 'system' } });
                                     this.onmessage({ data: { 
                                         type: 'CRITICAL_ERROR', 
-                                        msg: 'EMULATOR INITIALIZATION FAILED\\n\\nReason:\\nYour browser blocked the Web Worker because you are running locally (file://).\\nEven on a server, the required WASM backend (dolphin_wasm.js) cannot be bundled in a single HTML file.' 
+                                        msg: 'EMULATOR INITIALIZATION FAILED\\n\\nReason:\\nMissing compiled WASM core (dolphin_wasm.js). Upload the WASM core files to your host repository to enable emulation.' 
                                     }});
                                 }
                             }, 50);
@@ -662,41 +716,44 @@
                     canvas2d.width = 640; canvas2d.height = 480;
                     const ctx2d = canvas2d.getContext('2d');
                     ctx2d.fillStyle = '#111'; ctx2d.fillRect(0,0,640,480);
-                    ctx2d.fillStyle = '#ff4444'; ctx2d.font = '24px Inter, sans-serif';
-                    ctx2d.fillText('EMULATOR INITIALIZATION FAILED', 50, 100);
-                    ctx2d.fillStyle = '#ddd'; ctx2d.font = '14px Inter, sans-serif';
+                    ctx2d.fillStyle = '#ff4444'; ctx2d.font = 'bold 22px Inter, sans-serif';
+                    ctx2d.fillText('EMULATOR INITIALIZATION FAILED', 40, 80);
+                    ctx2d.fillStyle = '#ddd'; ctx2d.font = '13px Inter, monospace';
                     
                     const lines = msg.split('\n');
+                    let y = 130;
                     for(let i=0; i<lines.length; i++) {
-                        ctx2d.fillText(lines[i], 50, 150 + (i*20));
+                        if (lines[i].startsWith('Reason:')) ctx2d.fillStyle = '#ffcc00';
+                        else ctx2d.fillStyle = '#cccccc';
+                        ctx2d.fillText(lines[i], 40, y);
+                        y += 22;
                     }
                     
-                    // Copy 2D error state to WebGL canvas by texture binding (simulating backend output)
                     if(ctx) {
-                        const tex = ctx.createTexture();
-                        ctx.bindTexture(ctx.TEXTURE_2D, tex);
-                        ctx.texImage2D(ctx.TEXTURE_2D, 0, ctx.RGBA, ctx.RGBA, ctx.UNSIGNED_BYTE, canvas2d);
-                        // Standard WebGL blit would go here, but for fallback visual we can just replace the canvas node temporarily
                         canvas.parentNode.replaceChild(canvas2d, canvas);
                         canvas2d.id = 'game-canvas';
                         canvas2d.classList.add('w-full', 'h-full', 'object-contain', 'shadow-2xl', 'rounded');
                     }
                 }
                 else if (type === 'FRAME_READY') {
-                    // In a real environment, WASM outputs via OffscreenCanvas or SharedArrayBuffer
                     updateDebugStats(data);
                 }
             };
 
-            // Start architecture
-            emuWorker.postMessage({ type: 'INIT', payload: { protocol: window.location.protocol } });
+            // Start architecture with custom URL if saved
+            const customCoreUrl = localStorage.getItem('gc_custom_core_url');
+            emuWorker.postMessage({ 
+                type: 'INIT', 
+                payload: { 
+                    protocol: window.location.protocol,
+                    customUrl: customCoreUrl
+                } 
+            });
             emuWorker.postMessage({ type: 'MOUNT_DISC', payload: { name: file.name, size: file.size } });
             
             initAudioPipeline();
             startGameLoop();
         }
-
-
 
         // --- Real Web Audio Pipeline Setup ---
         let audioCtx;
